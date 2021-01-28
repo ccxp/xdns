@@ -78,8 +78,8 @@ func (s *DNSService) Listen() {
 	}
 	//defer s.remoteConn.Close()
 
-	go s.handleConn(s.localConn)
 	go s.handleConn(s.remoteConn)
+	s.handleConn(s.localConn)
 
 }
 
@@ -133,6 +133,7 @@ func (s *DNSService) Query(addr *net.UDPAddr, m *dnsmessage.Message, buf []byte)
 
 	if m.Header.Response {
 		if clientAddr, ok := s.memo.get(m.ID); ok {
+			log.Printf("result for %v from %v to %v", key, addr, clientAddr)
 			s.sendPacket(s.localConn, buf, clientAddr)
 		}
 
@@ -152,6 +153,7 @@ func (s *DNSService) Query(addr *net.UDPAddr, m *dnsmessage.Message, buf []byte)
 			return
 		}
 
+		log.Printf("result for %v from cache to %v", key, addr)
 		s.sendPacket(s.localConn, packed, addr)
 		return
 	}
@@ -160,13 +162,13 @@ func (s *DNSService) Query(addr *net.UDPAddr, m *dnsmessage.Message, buf []byte)
 	s.memo.set(m.ID, addr)
 
 	for _, forward := range forwarders {
+		log.Printf("searching %v from %v to %v", key, addr, forward)
 		s.sendPacket(s.remoteConn, buf, forward)
 	}
 }
 
 func (s *DNSService) sendPacket(conn *net.UDPConn, buf []byte, addr *net.UDPAddr) {
 
-	log.Printf("send packet to %v", addr)
 	_, err := conn.WriteToUDP(buf, addr)
 	if err != nil {
 		log.Println(err)

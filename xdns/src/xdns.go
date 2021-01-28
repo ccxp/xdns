@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os/exec"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 func init() {
@@ -14,7 +17,6 @@ func init() {
 	flag.StringVar(&dnsForward, "f", "192.168.1.1", "dns forward address, e.g. '192.168.1.1'")
 	flag.StringVar(&vpnIfname, "vpn", "l2tp-vpn", "vpn ifname, e.g. 'l2tp-vpn'")
 	flag.Parse()
-
 }
 
 func main() {
@@ -36,6 +38,13 @@ func main() {
 
 			if f != useVpn {
 				dnsSrv.book.clear()
+
+				if !f {
+					ctx, cf := context.WithTimeout(context.Background(), time.Second*5)
+					cmd := exec.CommandContext(ctx, "/etc/init.d/network", "restart")
+					cmd.Run()
+					cf()
+				}
 			}
 
 			useVpn = f

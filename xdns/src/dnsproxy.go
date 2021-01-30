@@ -16,6 +16,7 @@ var dnsForward string
 var dnsForwardVpn string
 var dnsSrv *DNSService
 var vpnIfname string
+var cacheSize int
 
 // dns
 
@@ -25,7 +26,6 @@ type DNSService struct {
 	remoteConn    *net.UDPConn
 	memo          dnsRequestPool
 	book          dnsStore
-	vpnBook       dnsStore
 	forwarders    []*net.UDPAddr
 	forwardersVpn []*net.UDPAddr
 }
@@ -42,8 +42,6 @@ func resolveDnsAddr(s string) (*net.UDPAddr, error) {
 func (s *DNSService) Listen() {
 
 	s.memo.data = make(map[uint16]*net.UDPAddr)
-	s.book.data = make(map[string]dnsEntry)
-	s.vpnBook.data = make(map[string]dnsEntry)
 
 	for _, addr := range strings.Split(dnsForward, ",") {
 		a, err := resolveDnsAddr(addr)
@@ -127,7 +125,6 @@ func (s *DNSService) Query(addr *net.UDPAddr, m *dnsmessage.Message, buf []byte)
 	var book *dnsStore = &s.book
 	var forwarders []*net.UDPAddr = s.forwarders
 	if useVpn {
-		book = &s.vpnBook
 		forwarders = s.forwardersVpn
 	}
 
@@ -137,7 +134,7 @@ func (s *DNSService) Query(addr *net.UDPAddr, m *dnsmessage.Message, buf []byte)
 			s.sendPacket(s.localConn, buf, clientAddr)
 		}
 
-		book.set(key, m.Answers)
+		book.set(key, m.Answers, len(buf))
 		return
 	}
 
@@ -219,6 +216,7 @@ func rString(r dnsmessage.Resource) string {
 	return sb.String()
 }
 
+/*
 type dnsStore struct {
 	sync.RWMutex
 	data map[string]dnsEntry
@@ -266,5 +264,59 @@ func (s *dnsStore) remove(key string) {
 func (s *dnsStore) clear() {
 	s.Lock()
 	s.data = make(map[string]dnsEntry)
+	s.Unlock()
+}
+*/
+
+type dnsStore struct {
+	sync.Mutex
+	data stringLru
+}
+
+type dnsEntry struct {
+	Resources []dnsmessage.Resource
+	TTL       uint32
+	Created   int64
+}
+
+func (s *dnsStore) get(key string) (r []dnsmessage.Resource, ok bool) {
+	now := time.Now().Unix()
+	s.Lock()
+	v, ele := s.data.Get(key)
+	if v != nil {
+		e := v.(*dnsEntry)
+		if e.TTL > 1 && (e.Created+int64(e.TTL) < now) {
+			s.data.Remove(ele)
+		} else {
+			r = e.Resources
+			ok = true
+		}
+	}
+	s.Unlock()
+
+	return
+}
+
+func (s *dnsStore) set(key string, resources []dnsmessage.Resource, size int) {
+
+	e := &dnsEntry{
+		Resources: resources,
+		Created:   time.Now().Unix(),
+	}
+	if len(resources) > 0 {
+		e.TTL = resources[0].Header.TTL
+	}
+
+	s.Lock()
+	for s.data.Size() > cacheSize && s.data.Count() > 0 {
+		s.data.RemoveBack()
+	}
+	s.data.Push(key, e, size)
+	s.Unlock()
+}
+
+func (s *dnsStore) clear() {
+	s.Lock()
+	s.data = stringLru{}
 	s.Unlock()
 }

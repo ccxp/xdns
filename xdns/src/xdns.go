@@ -16,6 +16,7 @@ func init() {
 	flag.StringVar(&dnsForwardVpn, "f2", "8.8.8.8,8.8.4.4", "dns forward address through vpn, e.g. '8.8.8.8'")
 	flag.StringVar(&dnsForward, "f", "192.168.1.1", "dns forward address, e.g. '192.168.1.1'")
 	flag.StringVar(&vpnIfname, "vpn", "l2tp-vpn", "vpn ifname, e.g. 'l2tp-vpn'")
+	flag.IntVar(&cacheSize, "c", 1<<27, "cache size")
 	flag.Parse()
 }
 
